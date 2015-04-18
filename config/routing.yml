@@ -1,0 +1,3 @@
+kinerity_bestanswer_main_controller:
+    pattern: /{action}
+    defaults: { _controller: kinerity.bestanswer.main.controller:change_post_status }
