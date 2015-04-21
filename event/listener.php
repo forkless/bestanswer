@@ -23,6 +23,9 @@ class listener implements EventSubscriberInterface
 	/** @var \phpbb\db\driver\driver_interface */
 	protected $db;
 
+	/** @var \phpbb\controller\helper */
+	protected $helper;
+
 	/** @var \phpbb\request\request */
 	protected $request;
 
@@ -43,6 +46,7 @@ class listener implements EventSubscriberInterface
 	*
 	* @param \phpbb\auth\auth						$auth			Auth object
 	* @param \phpbb\db\driver\driver_interface		$db				Database object
+	* @param \phpbb\controller\helper               $helper         Controller helper object
 	* @param \phpbb\request\request					$request		Request object
 	* @param \phpbb\template\template				$template		Template object
 	* @param \phpbb\user							$user			User object
@@ -50,10 +54,11 @@ class listener implements EventSubscriberInterface
 	* @param string									$php_ext
 	* @access public
 	*/
-	public function __construct(\phpbb\auth\auth $auth, \phpbb\db\driver\driver_interface $db, \phpbb\request\request $request, \phpbb\template\template $template, \phpbb\user $user, $root_path, $php_ext)
+	public function __construct(\phpbb\auth\auth $auth, \phpbb\db\driver\driver_interface $db, \phpbb\controller\helper $helper, \phpbb\request\request $request, \phpbb\template\template $template, \phpbb\user $user, $root_path, $php_ext)
 	{
 		$this->auth = $auth;
 		$this->db = $db;
+		$this->helper = $helper;
 		$this->request = $request;
 		$this->template = $template;
 		$this->user = $user;
@@ -210,8 +215,8 @@ class listener implements EventSubscriberInterface
 			$post_row['S_FIRST_POST'] = $topic_data['topic_first_post_id'] == $row['post_id'] ? true : false;
 
 			$post_row['U_ANSWER'] = append_sid("{$this->root_path}viewtopic.{$this->php_ext}", 'f=' . $topic_data['forum_id'] . '&amp;t=' . $topic_data['topic_id'] . '&#35;p' . $topic_data['bestanswer_post_id']);
-			$post_row['U_MARK_ANSWER'] = 'mark_answer?f=' . $topic_data['forum_id'] . '&amp;t=' . $topic_data['topic_id'] . '&amp;p=' . $row['post_id'];
-			$post_row['U_UNMARK_ANSWER'] = 'unmark_answer?f=' . $topic_data['forum_id'] . '&amp;t=' . $topic_data['topic_id'] . '&amp;p=' . $row['post_id'];
+			$post_row['U_MARK_ANSWER'] = $this->helper->route('kinerity_bestanswer_main_controller', array('action' => 'mark_answer', 'f' => $topic_data['forum_id'], 't' => $topic_data['topic_id'], 'p' => $row['post_id']));
+			$post_row['U_UNMARK_ANSWER'] = $this->helper->route('kinerity_bestanswer_main_controller', array('action' => 'unmark_answer', 'f' => $topic_data['forum_id'], 't' => $topic_data['topic_id'], 'p' => $row['post_id']));
 
 			if ($topic_data['bestanswer_post_id'])
 			{
