@@ -121,7 +121,7 @@ class main_controller
 			throw new \phpbb\exception\http_exception(404, $this->user->lang('TOPIC_FIRST_POST'));
 		}
 
-		if (!$this->auth->acl_get('m_mark_bestanswer', $forum_id) || (!$this->auth->acl_get('f_mark_bestanswer', $forum_id) && $data['topic_poster'] != $this->user->data['user_id']))
+		if (!$this->auth->acl_get('m_mark_bestanswer', $forum_id) && (!$this->auth->acl_get('f_mark_bestanswer', $forum_id) && $data['topic_poster'] != $this->user->data['user_id']))
 		{
 			throw new \phpbb\exception\http_exception(403, $this->user->lang('NOT_AUTHORISED'));
 		}
