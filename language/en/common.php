@@ -56,6 +56,7 @@ $lang = array_merge($lang, array(
 	'MARK_ANSWER_CONFIRM'	=> 'Are you sure you want to mark this post as the best answer?',
 
 	'TOPIC_FIRST_POST'	=> 'You cannot mark this post as the best answer as it is the first post of the topic.',
+	'TOPICS_ANSWERED'	=> 'Topics answered',
 
 	'UNMARK_ANSWER'			=> 'Unmark post as best answer',
 	'UNMARK_ANSWER_CONFIRM'	=> 'Are you sure you want to unmark this post as the best answer?',

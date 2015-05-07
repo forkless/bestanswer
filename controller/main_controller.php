@@ -10,6 +10,8 @@
 
 namespace kinerity\bestanswer\controller;
 
+use kinerity\bestanswer\tables;
+
 /**
 * Main controller
 */
@@ -33,6 +35,9 @@ class main_controller
 	/** @var string phpEx */
 	protected $php_ext;
 
+	/** @var string table_prefix */
+	protected $table_prefix;
+
 	/**
 	* Constructor
 	*
@@ -42,9 +47,10 @@ class main_controller
 	* @param \phpbb\user							$user			User object
 	* @param string									$root_path
 	* @param string									$php_ext
+	* @param string									$table_prefix
 	* @access public
 	*/
-	public function __construct(\phpbb\auth\auth $auth, \phpbb\db\driver\driver_interface $db, \phpbb\request\request $request, \phpbb\user $user, $root_path, $php_ext)
+	public function __construct(\phpbb\auth\auth $auth, \phpbb\db\driver\driver_interface $db, \phpbb\request\request $request, \phpbb\user $user, $root_path, $php_ext, $table_prefix)
 	{
 		$this->auth = $auth;
 		$this->db = $db;
@@ -52,6 +58,7 @@ class main_controller
 		$this->user = $user;
 		$this->root_path = $root_path;
 		$this->php_ext = $php_ext;
+		$this->table_prefix = $table_prefix;
 	}
 
 	/**
@@ -82,13 +89,14 @@ class main_controller
 		$this->db->sql_freeresult($result);
 
 		// Populate data array with post data
-		$sql = 'SELECT topic_id
+		$sql = 'SELECT topic_id, poster_id
 			FROM ' . POSTS_TABLE . '
 			WHERE post_id = ' . (int) $post_id;
 		$result = $this->db->sql_query($sql);
 		while ($row = $this->db->sql_fetchrow($result))
 		{
 			$data['topic_id'] = $row['topic_id'];
+			$data['poster_id'] = $row['poster_id'];
 		}
 		$this->db->sql_freeresult($result);
 
@@ -121,7 +129,7 @@ class main_controller
 			throw new \phpbb\exception\http_exception(404, $this->user->lang('TOPIC_FIRST_POST'));
 		}
 
-		if (!$this->auth->acl_get('m_mark_bestanswer', $forum_id) && (!$this->auth->acl_get('f_mark_bestanswer', $forum_id) && $data['topic_poster'] != $this->user->data['user_id']))
+		if (!$this->auth->acl_get('m_mark_bestanswer', (int) $forum_id) && (!$this->auth->acl_get('f_mark_bestanswer', (int) $forum_id) && $data['topic_poster'] != $this->user->data['user_id']))
 		{
 			throw new \phpbb\exception\http_exception(403, $this->user->lang('NOT_AUTHORISED'));
 		}
@@ -131,22 +139,36 @@ class main_controller
 			case 'mark_answer':
 				if (confirm_box(true))
 				{
+					$sql = 'SELECT poster_id
+						FROM ' . POSTS_TABLE . '
+						WHERE post_id = ' . (int) $post_id;
+					$result = $this->db->sql_query($sql);
+					$poster_id = (int) $this->db->sql_fetchfield('poster_id');
+					$this->db->sql_freeresult($result);
+
+					$sql = 'SELECT topic_id
+						FROM ' . $this->table_prefix . tables::TOPICS_ANSWER . '
+						WHERE topic_id = ' . (int) $topic_id;
+					$result = $this->db->sql_query($sql);
+					$data = (int) $this->db->sql_fetchfield('topic_id');
+					$this->db->sql_freeresult($result);
+
 					$sql_data = array(
-						'bestanswer_post_id'	=> (int) $post_id,
+						'topic_id'	=> (int) $topic_id,
+						'post_id'	=> (int) $post_id,
+						'user_id'	=> (int) $poster_id,
 					);
 
-					$sql = 'UPDATE ' . TOPICS_TABLE . ' SET ' . $this->db->sql_build_array('UPDATE', $sql_data) . ' WHERE topic_id = ' . (int) $topic_id;
+					if (!$data)
+					{
+						$sql = 'INSERT INTO ' . $this->table_prefix . tables::TOPICS_ANSWER . ' ' . $this->db->sql_build_array('INSERT', $sql_data);
+					}
+					else
+					{
+						$sql = 'UPDATE ' . $this->table_prefix . tables::TOPICS_ANSWER . ' SET ' . $this->db->sql_build_array('UPDATE', $sql_data) . ' WHERE topic_id = ' . (int) $topic_id;
+					}
+
 					$this->db->sql_query($sql);
-
-					$params = array(
-						't'	=> (int) $topic_id,
-					);
-
-					$url = generate_board_url();
-					$url .= ((substr($url, -1) == '/') ? '' : '/') . 'viewtopic.' . $this->php_ext;
-					$url = append_sid($url, $params);
-
-					redirect($url);
 				}
 				else
 				{
@@ -157,22 +179,9 @@ class main_controller
 			case 'unmark_answer':
 				if (confirm_box(true))
 				{
-					$sql_data = array(
-						'bestanswer_post_id'	=> 0,
-					);
-
-					$sql = 'UPDATE ' . TOPICS_TABLE . ' SET ' . $this->db->sql_build_array('UPDATE', $sql_data) . ' WHERE topic_id = ' . (int) $topic_id;
+					$sql = 'DELETE FROM ' . $this->table_prefix . tables::TOPICS_ANSWER . '
+						WHERE topic_id = ' . (int) $topic_id;
 					$this->db->sql_query($sql);
-
-					$params = array(
-						't'	=> (int) $topic_id,
-					);
-
-					$url = generate_board_url();
-					$url .= ((substr($url, -1) == '/') ? '' : '/') . 'viewtopic.' . $this->php_ext;
-					$url = append_sid($url, $params);
-
-					redirect($url);
 				}
 				else
 				{
@@ -180,5 +189,15 @@ class main_controller
 				}
 			break;
 		}
+
+		$params = array(
+			't'	=> (int) $topic_id,
+		);
+
+		$url = generate_board_url();
+		$url .= ((substr($url, -1) == '/') ? '' : '/') . 'viewtopic.' . $this->php_ext;
+		$url = append_sid($url, $params);
+
+		redirect($url);
 	}
 }

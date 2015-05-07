@@ -11,6 +11,7 @@
 namespace kinerity\bestanswer\event;
 
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
+use kinerity\bestanswer\tables;
 
 /**
 * Event listener
@@ -41,6 +42,9 @@ class listener implements EventSubscriberInterface
 	/** @var string phpEx */
 	protected $php_ext;
 
+	/** @var string table_prefix */
+	protected $table_prefix;
+
 	/**
 	* Constructor
 	*
@@ -52,9 +56,10 @@ class listener implements EventSubscriberInterface
 	* @param \phpbb\user							$user			User object
 	* @param string									$root_path
 	* @param string									$php_ext
+	* @param string									$table_prefix
 	* @access public
 	*/
-	public function __construct(\phpbb\auth\auth $auth, \phpbb\db\driver\driver_interface $db, \phpbb\controller\helper $helper, \phpbb\request\request $request, \phpbb\template\template $template, \phpbb\user $user, $root_path, $php_ext)
+	public function __construct(\phpbb\auth\auth $auth, \phpbb\db\driver\driver_interface $db, \phpbb\controller\helper $helper, \phpbb\request\request $request, \phpbb\template\template $template, \phpbb\user $user, $root_path, $php_ext, $table_prefix)
 	{
 		$this->auth = $auth;
 		$this->db = $db;
@@ -64,6 +69,7 @@ class listener implements EventSubscriberInterface
 		$this->user = $user;
 		$this->root_path = $root_path;
 		$this->php_ext = $php_ext;
+		$this->table_prefix = $table_prefix;
 	}
 
 	/**
@@ -87,6 +93,7 @@ class listener implements EventSubscriberInterface
 			'core.viewforum_modify_topicrow'				=> 'viewforum_modify_topicrow',
 			'core.viewtopic_assign_template_vars_before'	=> 'viewtopic_assign_template_vars_before',
 			'core.viewtopic_modify_post_row'				=> 'viewtopic_modify_post_row',
+			'core.viewtopic_cache_user_data'				=> 'viewtopic_cache_user_data',
 		);
 	}
 
@@ -145,25 +152,22 @@ class listener implements EventSubscriberInterface
 			FROM ' . FORUMS_TABLE . ' 
 			WHERE forum_id = ' . (int) $row['forum_id'];
 		$result = $this->db->sql_query($sql);
-		while ($sql_row = $this->db->sql_fetchrow($result))
-		{
-			$forum_data['bestanswer_enabled'] = $sql_row['bestanswer_enabled'];
-		}
+		$bestanswer_enabled = (int) $this->db->sql_fetchfield('bestanswer_enabled');
 		$this->db->sql_freeresult($result);
 
-		$sql = 'SELECT topic_id
-			FROM ' . POSTS_TABLE . '
-			WHERE post_id = ' . (int) $row['bestanswer_post_id'];
+		$sql = 'SELECT *
+			FROM ' . $this->table_prefix . tables::TOPICS_ANSWER . '
+			WHERE topic_id = ' . (int) $row['topic_id'];
 		$result = $this->db->sql_query($sql);
-		while ($sql_row = $this->db->sql_fetchrow($result))
+		while ($data = $this->db->sql_fetchrow($result))
 		{
-			$topic_id = $sql_row['topic_id'];
+			$topic_id = (int) $data['topic_id'];
 		}
 		$this->db->sql_freeresult($result);
 
-		if ($forum_data['bestanswer_enabled'] && $row['bestanswer_post_id'] && $row['topic_id'] == $topic_id)
+		if ($bestanswer_enabled)
 		{
-			$topic_row['S_ANSWERED'] = true;
+			$topic_row['S_ANSWERED'] = isset($topic_id) && $row['topic_id'] == $topic_id ? true : false;
 		}
 
 		$event['topic_row'] = $topic_row;
@@ -173,17 +177,16 @@ class listener implements EventSubscriberInterface
 	{
 		$topic_data = $event['topic_data'];
 
-		$sql = 'SELECT topic_id
-			FROM ' . POSTS_TABLE . '
-			WHERE post_id = ' . (int) $topic_data['bestanswer_post_id'];
+		$bestanswer_enabled = (int) $topic_data['bestanswer_enabled'];
+
+		$sql = 'SELECT post_id
+			FROM ' . $this->table_prefix . tables::TOPICS_ANSWER . '
+			WHERE topic_id = ' . (int) $topic_data['topic_id'];
 		$result = $this->db->sql_query($sql);
-		while ($sql_row = $this->db->sql_fetchrow($result))
-		{
-			$topic_id = $sql_row['topic_id'];
-		}
+		$post_id = (int) $this->db->sql_fetchfield('post_id');
 		$this->db->sql_freeresult($result);
 
-		if ($topic_data['bestanswer_enabled'] && $topic_data['bestanswer_post_id'] && $topic_data['topic_id'] == $topic_id)
+		if ($bestanswer_enabled && $post_id)
 		{
 			$this->template->assign_vars(array(
 				'S_ANSWERED'	=> true,
@@ -196,48 +199,77 @@ class listener implements EventSubscriberInterface
 		$post_row = $event['post_row'];
 		$row = $event['row'];
 		$topic_data = $event['topic_data'];
+		$user_poster_data = $event['user_poster_data'];
 
-		$sql = 'SELECT topic_id
-			FROM ' . POSTS_TABLE . '
-			WHERE post_id = ' . (int) $topic_data['bestanswer_post_id'];
+		$post_id = $topic_id = $user_id = 0;
+
+		$bestanswer_enabled = (int) $topic_data['bestanswer_enabled'];
+		$forum_id = (int) $topic_data['forum_id'];
+		$topic_poster = (int) $topic_data['topic_poster'];
+		$topic_first_post_id = (int) $topic_data['topic_first_post_id'];
+
+		$sql = 'SELECT *
+			FROM ' . $this->table_prefix . tables::TOPICS_ANSWER . '
+			WHERE topic_id = ' . (int) $topic_data['topic_id'];
 		$result = $this->db->sql_query($sql);
-		while ($sql_row = $this->db->sql_fetchrow($result))
+		while ($data = $this->db->sql_fetchrow($result))
 		{
-			$topic_id = $sql_row['topic_id'];
+			$post_id = (int) $data['post_id'];
+			$topic_id = (int) $data['topic_id'];
+			$user_id = (int) $data['user_id'];
 		}
 		$this->db->sql_freeresult($result);
 
-		if ($topic_data['bestanswer_enabled'])
+		if ($bestanswer_enabled)
 		{
-			$post_row['S_ANSWERED'] = $topic_data['bestanswer_post_id'] && $topic_data['topic_id'] == $topic_id ? true : false;
-			$post_row['S_ANSWER'] = $topic_data['bestanswer_post_id'] == $row['post_id'] ? true : false;
-			$post_row['S_AUTH'] = $this->auth->acl_get('m_mark_bestanswer', $topic_data['forum_id']) || ($this->auth->acl_get('f_mark_bestanswer', $topic_data['forum_id']) && $topic_data['topic_poster'] == $this->user->data['user_id']) ? true : false;
-			$post_row['S_FIRST_POST'] = $topic_data['topic_first_post_id'] == $row['post_id'] ? true : false;
+			$post_row['S_ANSWERED'] = $post_id ? true : false;
+			$post_row['S_ANSWER'] = $post_id == $row['post_id'] ? true : false;
+			$post_row['S_AUTH'] = $this->auth->acl_get('m_mark_bestanswer', $forum_id) || ($this->auth->acl_get('f_mark_bestanswer', $forum_id) && $topic_poster == $this->user->data['user_id']) ? true : false;
+			$post_row['S_FIRST_POST'] = $topic_first_post_id == $row['post_id'] ? true : false;
 
-			$post_row['U_ANSWER'] = append_sid("{$this->root_path}viewtopic.{$this->php_ext}", 'f=' . $topic_data['forum_id'] . '&amp;t=' . $topic_data['topic_id'] . '&#35;p' . $topic_data['bestanswer_post_id']);
-			$post_row['U_MARK_ANSWER'] = $this->helper->route('kinerity_bestanswer_main_controller', array('action' => 'mark_answer', 'f' => $topic_data['forum_id'], 't' => $topic_data['topic_id'], 'p' => $row['post_id']));
-			$post_row['U_UNMARK_ANSWER'] = $this->helper->route('kinerity_bestanswer_main_controller', array('action' => 'unmark_answer', 'f' => $topic_data['forum_id'], 't' => $topic_data['topic_id'], 'p' => $row['post_id']));
+			$post_row['U_ANSWER'] = append_sid("{$this->root_path}viewtopic.{$this->php_ext}", 'f=' . $forum_id . '&amp;t=' . $topic_id . '&#35;p' . $post_id);
+			$post_row['U_MARK_ANSWER'] = $this->helper->route('kinerity_bestanswer_main_controller', array('action' => 'mark_answer', 'f' => $forum_id, 't' => $topic_data['topic_id'], 'p' => $row['post_id']));
+			$post_row['U_UNMARK_ANSWER'] = $this->helper->route('kinerity_bestanswer_main_controller', array('action' => 'unmark_answer', 'f' => $forum_id, 't' => $topic_data['topic_id'], 'p' => $row['post_id']));
 
-			if ($topic_data['bestanswer_post_id'])
+			if ($post_id)
 			{
 				$sql = 'SELECT p.*, u.user_id, u.username, u.user_colour
 					FROM ' . POSTS_TABLE . ' p, ' . USERS_TABLE . ' u
-					WHERE p.post_id = ' . (int) $topic_data['bestanswer_post_id'] . '
+					WHERE p.post_id = ' . (int) $post_id . '
 						AND p.poster_id = u.user_id';
 				$result = $this->db->sql_query($sql);
-				while ($sql_row = $this->db->sql_fetchrow($result))
+				while ($data = $this->db->sql_fetchrow($result))
 				{
-					$bbcode_options = (($sql_row['enable_bbcode']) ? OPTION_FLAG_BBCODE : 0) +
-						(($sql_row['enable_smilies']) ? OPTION_FLAG_SMILIES : 0) +
-						(($sql_row['enable_magic_url']) ? OPTION_FLAG_LINKS : 0);
-					$post_row['ANSWER'] = generate_text_for_display($sql_row['post_text'], $sql_row['bbcode_uid'], $sql_row['bbcode_bitfield'], $bbcode_options);
-					$post_row['ANSWER_AUTHOR_FULL'] = get_username_string('full', $sql_row['user_id'], $sql_row['username'], $sql_row['user_colour']);
-					$post_row['ANSWER_DATE'] = $this->user->format_date($sql_row['post_time']);
+					$bbcode_options = (($data['enable_bbcode']) ? OPTION_FLAG_BBCODE : 0) +
+						(($data['enable_smilies']) ? OPTION_FLAG_SMILIES : 0) +
+						(($data['enable_magic_url']) ? OPTION_FLAG_LINKS : 0);
+					$post_row['ANSWER'] = generate_text_for_display($data['post_text'], $data['bbcode_uid'], $data['bbcode_bitfield'], $bbcode_options);
+					$post_row['ANSWER_AUTHOR_FULL'] = get_username_string('full', $data['user_id'], $data['username'], $data['user_colour']);
+					$post_row['ANSWER_DATE'] = $this->user->format_date($data['post_time']);
 				}
 				$this->db->sql_freeresult($result);
 			}
 		}
 
+		$post_row['TOPICS_ANSWERED'] = $user_poster_data['topics_answered'];
+
 		$event['post_row'] = $post_row;
+	}
+
+	public function viewtopic_cache_user_data($event)
+	{
+		$poster_id = $event['poster_id'];
+		$user_cache_data = $event['user_cache_data'];
+
+		$sql = 'SELECT COUNT(user_id) AS topics_answered
+			FROM ' . $this->table_prefix . tables::TOPICS_ANSWER . '
+			WHERE user_id = ' . (int) $poster_id;
+		$result = $this->db->sql_query($sql);
+		$topics_answered = (int) $this->db->sql_fetchfield('topics_answered');
+		$this->db->sql_freeresult($result);
+
+		$user_cache_data['topics_answered'] = (int) $topics_answered;
+
+		$event['user_cache_data'] = $user_cache_data;
 	}
 }
